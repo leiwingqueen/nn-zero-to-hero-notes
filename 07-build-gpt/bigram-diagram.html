@@ -1,0 +1,707 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bigram Language Model 图解</title>
+<style>
+  :root {
+    --paper: #eff0ea;
+    --panel: #f8f8f3;
+    --ink: #1e2420;
+    --muted: #6b7368;
+    --line: rgba(30,36,32,0.14);
+    --accent-cur: #a64b3f;
+    --accent-cur-soft: rgba(166,75,63,0.12);
+    --accent-next: #2f6b5e;
+    --accent-next-soft: rgba(47,107,94,0.12);
+    --accent-op: #a3711f;
+    --accent-op-soft: rgba(163,113,31,0.14);
+    --code-bg: #1e2420;
+    --code-ink: #e9e7df;
+    --shadow: 0 1px 2px rgba(30,36,32,0.06), 0 8px 24px -12px rgba(30,36,32,0.18);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #12100c;
+      --panel: #1a1815;
+      --ink: #e9e7df;
+      --muted: #9d9a90;
+      --line: rgba(233,231,223,0.14);
+      --accent-cur: #e08d7e;
+      --accent-cur-soft: rgba(224,141,126,0.14);
+      --accent-next: #6fbba7;
+      --accent-next-soft: rgba(111,187,167,0.14);
+      --accent-op: #e0b15c;
+      --accent-op-soft: rgba(224,177,92,0.16);
+      --code-bg: #0c0f0d;
+      --code-ink: #d8d6cc;
+      --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 8px 28px -12px rgba(0,0,0,0.5);
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #12100c;
+    --panel: #1a1815;
+    --ink: #e9e7df;
+    --muted: #9d9a90;
+    --line: rgba(233,231,223,0.14);
+    --accent-cur: #e08d7e;
+    --accent-cur-soft: rgba(224,141,126,0.14);
+    --accent-next: #6fbba7;
+    --accent-next-soft: rgba(111,187,167,0.14);
+    --accent-op: #e0b15c;
+    --accent-op-soft: rgba(224,177,92,0.16);
+    --code-bg: #0c0f0d;
+    --code-ink: #d8d6cc;
+    --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 8px 28px -12px rgba(0,0,0,0.5);
+  }
+  :root[data-theme="light"] {
+    --paper: #eff0ea;
+    --panel: #f8f8f3;
+    --ink: #1e2420;
+    --muted: #6b7368;
+    --line: rgba(30,36,32,0.14);
+    --accent-cur: #a64b3f;
+    --accent-cur-soft: rgba(166,75,63,0.12);
+    --accent-next: #2f6b5e;
+    --accent-next-soft: rgba(47,107,94,0.12);
+    --accent-op: #a3711f;
+    --accent-op-soft: rgba(163,113,31,0.14);
+    --code-bg: #1e2420;
+    --code-ink: #e9e7df;
+    --shadow: 0 1px 2px rgba(30,36,32,0.06), 0 8px 24px -12px rgba(30,36,32,0.18);
+  }
+
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB",
+      "Segoe UI", "Microsoft YaHei", sans-serif;
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+  }
+  .mono {
+    font-family: ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  }
+  main {
+    max-width: 840px;
+    margin: 0 auto;
+    padding: clamp(28px, 6vw, 64px) clamp(18px, 5vw, 32px) 80px;
+  }
+
+  /* ---------- header ---------- */
+  header { margin-bottom: clamp(36px, 6vw, 56px); }
+  .eyebrow {
+    font-family: ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    font-size: 0.78rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0 0 14px;
+  }
+  h1 {
+    font-family: ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    font-size: clamp(1.7rem, 4.4vw, 2.5rem);
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    line-height: 1.15;
+    margin: 0 0 16px;
+    text-wrap: balance;
+  }
+  header p.lede {
+    font-size: 1.05rem;
+    line-height: 1.75;
+    color: var(--ink);
+    max-width: 60ch;
+    margin: 0;
+  }
+  header p.lede .hl { color: var(--accent-cur); font-weight: 600; }
+
+  /* ---------- legend ---------- */
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 20px;
+    margin-top: 22px;
+    padding-top: 20px;
+    border-top: 1px solid var(--line);
+  }
+  .legend-item {
+    display: flex;
+    align-items: baseline;
+    gap: 7px;
+    font-size: 0.85rem;
+    color: var(--muted);
+  }
+  .legend-item b {
+    font-family: ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    color: var(--ink);
+    font-weight: 700;
+  }
+
+  /* ---------- sections ---------- */
+  section {
+    margin-bottom: clamp(30px, 5vw, 46px);
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    box-shadow: var(--shadow);
+    padding: clamp(20px, 4vw, 34px);
+  }
+  .sec-head {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    margin-bottom: 8px;
+  }
+  .sec-num {
+    font-family: ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    font-size: 0.85rem;
+    color: var(--muted);
+  }
+  h2 {
+    font-size: clamp(1.15rem, 2.6vw, 1.4rem);
+    margin: 0;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+  }
+  h2 code {
+    font-family: ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    font-size: 0.85em;
+    font-weight: 600;
+    background: var(--accent-op-soft);
+    color: var(--accent-op);
+    padding: 1px 7px;
+    border-radius: 5px;
+  }
+  section > p {
+    color: var(--muted);
+    line-height: 1.75;
+    font-size: 0.97rem;
+    max-width: 66ch;
+    margin: 10px 0 26px;
+  }
+  section > p .hl-cur { color: var(--accent-cur); font-weight: 600; }
+  section > p .hl-next { color: var(--accent-next); font-weight: 600; }
+  section > p .hl-op { color: var(--accent-op); font-weight: 600; }
+  code.inline {
+    font-family: ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    background: var(--code-bg);
+    color: var(--code-ink);
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: 0.88em;
+  }
+
+  /* ---------- section 1: embedding table ---------- */
+  .lookup-wrap {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: clamp(14px, 4vw, 40px);
+    align-items: center;
+  }
+  .token-col {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .token-col .col-label {
+    font-size: 0.72rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 6px;
+    font-family: ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  }
+  .token {
+    width: 40px;
+    height: 34px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 7px;
+    font-family: ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    font-size: 0.95rem;
+    border: 1px solid var(--line);
+    color: var(--muted);
+    background: transparent;
+  }
+  .token.active {
+    border-color: var(--accent-cur);
+    color: var(--accent-cur);
+    background: var(--accent-cur-soft);
+    font-weight: 700;
+  }
+  .matrix-block { min-width: 0; }
+  .matrix-block .col-label {
+    font-size: 0.72rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 6px;
+    font-family: ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  }
+  .grid-table {
+    display: grid;
+    grid-template-rows: repeat(8, 34px);
+    gap: 4px;
+    margin-bottom: 18px;
+  }
+  .grid-row {
+    display: grid;
+    grid-template-columns: repeat(14, 1fr);
+    gap: 4px;
+  }
+  .grid-cell {
+    border-radius: 4px;
+    background: color-mix(in srgb, var(--muted) var(--val,20%), transparent);
+  }
+  .grid-row.active-row {
+    outline: 2px solid var(--accent-cur);
+    outline-offset: 2px;
+    border-radius: 5px;
+  }
+  .grid-row.active-row .grid-cell {
+    background: color-mix(in srgb, var(--accent-cur) var(--val,20%), transparent);
+  }
+  .arrow-note {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 0.85rem;
+    color: var(--muted);
+    margin-bottom: 18px;
+  }
+  .arrow-note svg { flex: none; }
+  .bars {
+    display: flex;
+    align-items: flex-end;
+    gap: 6px;
+    height: 90px;
+    padding: 0 2px;
+    border-bottom: 1px solid var(--line);
+  }
+  .bar {
+    flex: 1;
+    background: var(--accent-next-soft);
+    border-radius: 3px 3px 0 0;
+    position: relative;
+    min-width: 0;
+  }
+  .bar.top {
+    background: var(--accent-next);
+  }
+  .bar-labels {
+    display: flex;
+    gap: 6px;
+    padding: 0 2px;
+    margin-top: 6px;
+  }
+  .bar-labels span {
+    flex: 1;
+    text-align: center;
+    font-family: ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    font-size: 0.8rem;
+    color: var(--muted);
+  }
+  .bar-labels span.top { color: var(--accent-next); font-weight: 700; }
+  .caption {
+    font-size: 0.82rem;
+    color: var(--muted);
+    margin-top: 14px;
+    line-height: 1.6;
+  }
+  .shape-tag {
+    display: inline-block;
+    font-family: ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    font-size: 0.78rem;
+    padding: 2px 8px;
+    border-radius: 5px;
+    border: 1px dashed var(--line);
+    color: var(--muted);
+  }
+
+  /* ---------- pipeline (section 2) ---------- */
+  .pipeline {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: stretch;
+    gap: 0;
+    margin-bottom: 6px;
+  }
+  .chip {
+    background: var(--paper);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 12px 14px;
+    min-width: 130px;
+    flex: 1 1 130px;
+  }
+  .chip .op {
+    font-family: ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    font-size: 0.86rem;
+    font-weight: 700;
+    color: var(--ink);
+    display: block;
+    margin-bottom: 4px;
+  }
+  .chip .shape {
+    font-family: ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    font-size: 0.8rem;
+    color: var(--accent-next);
+  }
+  .chip .desc {
+    font-size: 0.78rem;
+    color: var(--muted);
+    margin-top: 5px;
+    line-height: 1.5;
+  }
+  .flow-arrow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 34px;
+    color: var(--muted);
+  }
+  .branch {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-top: 22px;
+    padding-top: 22px;
+    border-top: 1px dashed var(--line);
+  }
+  .branch-col { display: flex; flex-direction: column; gap: 10px; }
+  .branch-label {
+    font-family: ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--accent-op);
+    margin-bottom: 2px;
+  }
+  .down-arrow {
+    display: flex;
+    justify-content: center;
+    color: var(--muted);
+  }
+  .result-chip {
+    border-radius: 10px;
+    padding: 12px 14px;
+    text-align: center;
+    font-family: ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    font-size: 0.9rem;
+    font-weight: 700;
+  }
+  .result-chip.loss {
+    background: var(--accent-op-soft);
+    color: var(--accent-op);
+    border: 1px solid color-mix(in srgb, var(--accent-op) 40%, transparent);
+  }
+  .result-chip.none {
+    background: transparent;
+    color: var(--muted);
+    border: 1px dashed var(--line);
+    font-weight: 400;
+  }
+
+  @media (max-width: 640px) {
+    .pipeline { flex-direction: column; }
+    .flow-arrow { transform: rotate(90deg); padding: 2px 0; flex-basis: 20px; }
+    .branch { grid-template-columns: 1fr; }
+    .lookup-wrap { grid-template-columns: 1fr; }
+  }
+
+  /* ---------- section 3: generate loop ---------- */
+  .loop-wrap {
+    display: grid;
+    grid-template-columns: 1fr 56px;
+    gap: 4px;
+  }
+  .loop-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .step {
+    display: grid;
+    grid-template-columns: 28px 1fr;
+    gap: 12px;
+    align-items: start;
+    background: var(--paper);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 12px 14px;
+  }
+  .step .num {
+    font-family: ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    font-weight: 700;
+    color: var(--accent-cur);
+    font-size: 0.95rem;
+  }
+  .step .op {
+    font-family: ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    font-weight: 700;
+    font-size: 0.88rem;
+    display: block;
+  }
+  .step .shape {
+    font-family: ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    color: var(--accent-next);
+    font-size: 0.8rem;
+    margin-left: 8px;
+  }
+  .step .desc {
+    font-size: 0.82rem;
+    color: var(--muted);
+    margin-top: 4px;
+    line-height: 1.55;
+  }
+  .loop-svg-col {
+    position: relative;
+  }
+  .loop-svg-col svg { position: absolute; top: 0; left: 0; height: 100%; width: 56px; }
+  .loop-caption {
+    text-align: center;
+    font-size: 0.72rem;
+    color: var(--accent-op);
+    font-family: ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    margin-top: 4px;
+  }
+
+  footer {
+    margin-top: 40px;
+    padding-top: 24px;
+    border-top: 1px solid var(--line);
+    font-size: 0.85rem;
+    color: var(--muted);
+    line-height: 1.7;
+  }
+  footer code {
+    font-family: ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    background: var(--code-bg);
+    color: var(--code-ink);
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: 0.88em;
+  }
+</style>
+</head>
+<body>
+
+<main>
+
+  <header>
+    <p class="eyebrow">从零构建 GPT · 第 0 站</p>
+    <h1>BigramLanguageModel 图解</h1>
+    <p class="lede">
+      整个模型只有一个 <code class="inline" style="background:var(--code-bg);color:var(--code-ink)">nn.Embedding(vocab_size, vocab_size)</code>。
+      没有注意力、没有隐藏层——<span class="hl">当前 token 的 id 直接索引出下一个 token 的 logits</span>。
+      这是后续所有 Transformer 改进要击败的基线模型。
+    </p>
+    <div class="legend">
+      <div class="legend-item"><b>B</b> batch，几段文本一起训练</div>
+      <div class="legend-item"><b>T</b> time / block，每段文本的长度</div>
+      <div class="legend-item"><b>C</b> channel，这里等于 vocab_size</div>
+    </div>
+  </header>
+
+  <!-- SECTION 1 -->
+  <section>
+    <div class="sec-head">
+      <span class="sec-num">01</span>
+      <h2>查表即预测 · <code>token_embedding_table</code></h2>
+    </div>
+    <p>
+      权重矩阵形状是 <span class="shape-tag">(vocab_size, vocab_size)</span>。
+      输入字符 <span class="hl-cur">'h'</span>（下图高亮行）时，模型不做任何计算，
+      直接把这一行 <span class="hl-cur">C 个数</span>取出来，当作预测下一个字符的 logits。
+    </p>
+
+    <div class="lookup-wrap">
+      <div class="token-col">
+        <span class="col-label">输入 idx</span>
+        <div class="token">' '</div>
+        <div class="token">a</div>
+        <div class="token active">h</div>
+        <div class="token">e</div>
+        <div class="token">l</div>
+        <div class="token">o</div>
+        <div class="token">r</div>
+        <div class="token">w</div>
+      </div>
+
+      <div class="matrix-block">
+        <span class="col-label">token_embedding_table.weight　—　shape (vocab_size, vocab_size)</span>
+        <div class="grid-table">
+          <div class="grid-row"><div class="grid-cell" style="--val:22%"></div><div class="grid-cell" style="--val:35%"></div><div class="grid-cell" style="--val:18%"></div><div class="grid-cell" style="--val:44%"></div><div class="grid-cell" style="--val:12%"></div><div class="grid-cell" style="--val:30%"></div><div class="grid-cell" style="--val:20%"></div><div class="grid-cell" style="--val:26%"></div><div class="grid-cell" style="--val:15%"></div><div class="grid-cell" style="--val:38%"></div><div class="grid-cell" style="--val:24%"></div><div class="grid-cell" style="--val:19%"></div><div class="grid-cell" style="--val:33%"></div><div class="grid-cell" style="--val:21%"></div></div>
+          <div class="grid-row"><div class="grid-cell" style="--val:31%"></div><div class="grid-cell" style="--val:14%"></div><div class="grid-cell" style="--val:40%"></div><div class="grid-cell" style="--val:23%"></div><div class="grid-cell" style="--val:36%"></div><div class="grid-cell" style="--val:17%"></div><div class="grid-cell" style="--val:28%"></div><div class="grid-cell" style="--val:20%"></div><div class="grid-cell" style="--val:34%"></div><div class="grid-cell" style="--val:16%"></div><div class="grid-cell" style="--val:29%"></div><div class="grid-cell" style="--val:41%"></div><div class="grid-cell" style="--val:13%"></div><div class="grid-cell" style="--val:27%"></div></div>
+          <div class="grid-row active-row"><div class="grid-cell" style="--val:14%"></div><div class="grid-cell" style="--val:20%"></div><div class="grid-cell" style="--val:70%"></div><div class="grid-cell" style="--val:18%"></div><div class="grid-cell" style="--val:22%"></div><div class="grid-cell" style="--val:16%"></div><div class="grid-cell" style="--val:24%"></div><div class="grid-cell" style="--val:12%"></div><div class="grid-cell" style="--val:19%"></div><div class="grid-cell" style="--val:26%"></div><div class="grid-cell" style="--val:15%"></div><div class="grid-cell" style="--val:21%"></div><div class="grid-cell" style="--val:17%"></div><div class="grid-cell" style="--val:23%"></div></div>
+          <div class="grid-row"><div class="grid-cell" style="--val:25%"></div><div class="grid-cell" style="--val:33%"></div><div class="grid-cell" style="--val:19%"></div><div class="grid-cell" style="--val:38%"></div><div class="grid-cell" style="--val:14%"></div><div class="grid-cell" style="--val:29%"></div><div class="grid-cell" style="--val:22%"></div><div class="grid-cell" style="--val:31%"></div><div class="grid-cell" style="--val:17%"></div><div class="grid-cell" style="--val:24%"></div><div class="grid-cell" style="--val:36%"></div><div class="grid-cell" style="--val:15%"></div><div class="grid-cell" style="--val:28%"></div><div class="grid-cell" style="--val:20%"></div></div>
+          <div class="grid-row"><div class="grid-cell" style="--val:18%"></div><div class="grid-cell" style="--val:27%"></div><div class="grid-cell" style="--val:34%"></div><div class="grid-cell" style="--val:16%"></div><div class="grid-cell" style="--val:23%"></div><div class="grid-cell" style="--val:39%"></div><div class="grid-cell" style="--val:19%"></div><div class="grid-cell" style="--val:25%"></div><div class="grid-cell" style="--val:31%"></div><div class="grid-cell" style="--val:14%"></div><div class="grid-cell" style="--val:22%"></div><div class="grid-cell" style="--val:37%"></div><div class="grid-cell" style="--val:18%"></div><div class="grid-cell" style="--val:26%"></div></div>
+          <div class="grid-row"><div class="grid-cell" style="--val:29%"></div><div class="grid-cell" style="--val:16%"></div><div class="grid-cell" style="--val:24%"></div><div class="grid-cell" style="--val:32%"></div><div class="grid-cell" style="--val:19%"></div><div class="grid-cell" style="--val:27%"></div><div class="grid-cell" style="--val:41%"></div><div class="grid-cell" style="--val:15%"></div><div class="grid-cell" style="--val:23%"></div><div class="grid-cell" style="--val:30%"></div><div class="grid-cell" style="--val:18%"></div><div class="grid-cell" style="--val:25%"></div><div class="grid-cell" style="--val:33%"></div><div class="grid-cell" style="--val:20%"></div></div>
+          <div class="grid-row"><div class="grid-cell" style="--val:21%"></div><div class="grid-cell" style="--val:35%"></div><div class="grid-cell" style="--val:17%"></div><div class="grid-cell" style="--val:26%"></div><div class="grid-cell" style="--val:40%"></div><div class="grid-cell" style="--val:14%"></div><div class="grid-cell" style="--val:22%"></div><div class="grid-cell" style="--val:29%"></div><div class="grid-cell" style="--val:16%"></div><div class="grid-cell" style="--val:34%"></div><div class="grid-cell" style="--val:19%"></div><div class="grid-cell" style="--val:24%"></div><div class="grid-cell" style="--val:31%"></div><div class="grid-cell" style="--val:13%"></div></div>
+          <div class="grid-row"><div class="grid-cell" style="--val:33%"></div><div class="grid-cell" style="--val:19%"></div><div class="grid-cell" style="--val:28%"></div><div class="grid-cell" style="--val:15%"></div><div class="grid-cell" style="--val:36%"></div><div class="grid-cell" style="--val:21%"></div><div class="grid-cell" style="--val:26%"></div><div class="grid-cell" style="--val:39%"></div><div class="grid-cell" style="--val:17%"></div><div class="grid-cell" style="--val:23%"></div><div class="grid-cell" style="--val:30%"></div><div class="grid-cell" style="--val:18%"></div><div class="grid-cell" style="--val:25%"></div><div class="grid-cell" style="--val:32%"></div></div>
+        </div>
+
+        <div class="arrow-note">
+          <svg width="22" height="14" viewBox="0 0 22 14" fill="none"><path d="M1 7H20M20 7L14 1M20 7L14 13" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          取出第 2 行（'h' 的 id）——这一行就是 logits，无需其他计算
+        </div>
+
+        <span class="col-label">logits 向量（按字符分组显示，柱高 = 数值大小）</span>
+        <div class="bars">
+          <div class="bar" style="height:32%"></div>
+          <div class="bar" style="height:44%"></div>
+          <div class="bar top" style="height:92%"></div>
+          <div class="bar" style="height:20%"></div>
+          <div class="bar" style="height:38%"></div>
+          <div class="bar" style="height:26%"></div>
+          <div class="bar" style="height:16%"></div>
+        </div>
+        <div class="bar-labels">
+          <span>' '</span><span>a</span><span class="top">e</span><span>l</span><span>o</span><span>r</span><span>w</span>
+        </div>
+        <p class="caption">'h' 之后最可能出现的是 <span class="hl-next">'e'</span>（正如 "h‑e‑llo"）——但这只是查表结果，模型完全没有"理解"上下文。</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- SECTION 2 -->
+  <section>
+    <div class="sec-head">
+      <span class="sec-num">02</span>
+      <h2><code>forward(idx, targets)</code> · 从 id 到 loss</h2>
+    </div>
+    <p>
+      前向传播只做两件事：查表得到 <span class="hl-next">logits</span>；
+      如果给了 <code class="inline">targets</code>，就把 <span class="hl-cur">(B,T)</span>
+      拍平成 <span class="hl-cur">(B*T,)</span>，用 <span class="hl-op">交叉熵</span>算出一个标量 loss。
+    </p>
+
+    <div class="pipeline">
+      <div class="chip">
+        <span class="op">idx</span>
+        <span class="shape">(B, T) int</span>
+        <div class="desc">一批字符 id，来自训练数据的随机切片</div>
+      </div>
+      <div class="flow-arrow">
+        <svg width="22" height="14" viewBox="0 0 22 14" fill="none"><path d="M1 7H20M20 7L14 1M20 7L14 13" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </div>
+      <div class="chip">
+        <span class="op">token_embedding_table(idx)</span>
+        <span class="shape">查表</span>
+        <div class="desc">每个 id 独立查出它自己的那一行</div>
+      </div>
+      <div class="flow-arrow">
+        <svg width="22" height="14" viewBox="0 0 22 14" fill="none"><path d="M1 7H20M20 7L14 1M20 7L14 13" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </div>
+      <div class="chip">
+        <span class="op">logits</span>
+        <span class="shape">(B, T, C)</span>
+        <div class="desc">C = vocab_size，每个位置一份"下一个字符"的打分</div>
+      </div>
+    </div>
+
+    <div class="branch">
+      <div class="branch-col">
+        <span class="branch-label">targets is None</span>
+        <div class="down-arrow">
+          <svg width="14" height="20" viewBox="0 0 14 20" fill="none"><path d="M7 1V18M7 18L1 12M7 18L13 12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+        <div class="result-chip none">loss = None</div>
+        <p class="desc" style="margin-top:2px">推理 / 生成阶段——只要 logits</p>
+      </div>
+      <div class="branch-col">
+        <span class="branch-label">targets 已给出</span>
+        <div class="down-arrow">
+          <svg width="14" height="20" viewBox="0 0 14 20" fill="none"><path d="M7 1V18M7 18L1 12M7 18L13 12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+        <div class="chip" style="margin-bottom:6px">
+          <span class="op">.view(B*T, C)</span> <span class="shape">/ .view(B*T)</span>
+          <div class="desc">logits 与 targets 各自拍平成二维 / 一维，交给 cross_entropy</div>
+        </div>
+        <div class="down-arrow">
+          <svg width="14" height="20" viewBox="0 0 14 20" fill="none"><path d="M7 1V18M7 18L1 12M7 18L13 12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+        <div class="result-chip loss">F.cross_entropy → loss</div>
+        <p class="desc" style="margin-top:2px">训练阶段——衡量预测分布与真实下一个字符的差距</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- SECTION 3 -->
+  <section>
+    <div class="sec-head">
+      <span class="sec-num">03</span>
+      <h2><code>generate(idx, max_new_tokens)</code> · 自回归采样循环</h2>
+    </div>
+    <p>
+      生成时模型每次只关心<span class="hl-op">最后一个时间步</span>的 logits，
+      转成概率后<span class="hl-op">按概率随机采样</span>一个新字符，拼回序列末尾，再整体喂回模型——如此循环。
+    </p>
+
+    <div class="loop-wrap">
+      <div class="loop-steps">
+        <div class="step">
+          <span class="num">1</span>
+          <div>
+            <span class="op">logits, _ = self(idx) <span class="shape">(B, T, C)</span></span>
+            <div class="desc">把目前为止的整段序列重新跑一遍前向传播</div>
+          </div>
+        </div>
+        <div class="step">
+          <span class="num">2</span>
+          <div>
+            <span class="op">logits[:, -1, :] <span class="shape">(B, C)</span></span>
+            <div class="desc">只保留最后一个位置——它预测的是"接下来"那个字符</div>
+          </div>
+        </div>
+        <div class="step">
+          <span class="num">3</span>
+          <div>
+            <span class="op">F.softmax(logits, dim=-1) <span class="shape">(B, C)</span></span>
+            <div class="desc">logits 转成一个合法的概率分布</div>
+          </div>
+        </div>
+        <div class="step">
+          <span class="num">4</span>
+          <div>
+            <span class="op">torch.multinomial(probs, 1) <span class="shape">(B, 1)</span></span>
+            <div class="desc">按概率随机采样，而不是直接取最大值——所以每次生成结果都不同</div>
+          </div>
+        </div>
+        <div class="step">
+          <span class="num">5</span>
+          <div>
+            <span class="op">torch.cat((idx, idx_next), 1) <span class="shape">(B, T+1)</span></span>
+            <div class="desc">采样出的新字符拼到序列末尾，序列变长 1</div>
+          </div>
+        </div>
+      </div>
+      <div class="loop-svg-col">
+        <svg viewBox="0 0 56 400" preserveAspectRatio="none">
+          <path d="M 14 370 C 48 370, 48 30, 14 30" fill="none" stroke="var(--accent-cur)" stroke-width="1.8" stroke-linecap="round" marker-end="url(#arrowhead)"/>
+          <defs>
+            <marker id="arrowhead" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto">
+              <path d="M0,0 L8,4 L0,8 Z" fill="var(--accent-cur)"/>
+            </marker>
+          </defs>
+        </svg>
+      </div>
+    </div>
+    <p class="loop-caption">重复以上 5 步，直到生成满 max_new_tokens 个字符为止</p>
+  </section>
+
+  <footer>
+    这就是 <code>m.generate(idx=torch.zeros((1,1)), max_new_tokens=100)</code> 背后发生的全部事情——
+    没有上下文窗口、没有注意力，每一步的预测只依赖<span style="color:var(--accent-cur);font-weight:600">上一个字符</span>。
+    这正是接下来引入 self-attention 要解决的局限。
+  </footer>
+
+</main>
+
+</body>
+</html>
