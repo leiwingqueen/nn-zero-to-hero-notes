@@ -95,6 +95,7 @@ def estimate_loss(model):
             _, loss = m(xb, yb)
             losses[i] = loss
         out[split] = losses.mean()
+    model.train()
     return out
 
 
