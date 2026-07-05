@@ -67,9 +67,9 @@ def get_batch(split):
     return x, y
 
 
-#x, y = get_batch("train")
-#print("x:", x)
-#print("y:", y)
+# x, y = get_batch("train")
+# print("x:", x)
+# print("y:", y)
 
 
 @torch.no_grad()
@@ -88,30 +88,44 @@ class BigramLanguageModel(nn.Module):
 
     def __init__(self, vocab_size):
         super().__init__()
-        # TODO: 定义一个 nn.Embedding(vocab_size, vocab_size)
+        # 定义一个 nn.Embedding(vocab_size, vocab_size)
         # 每个 token 直接通过查表得到下一个 token 的 logits（没有隐藏层）
-        raise NotImplementedError
+        self.token_embedding_table = nn.Embedding(vocab_size, vocab_size)
 
     def forward(self, idx, targets=None):
         # idx and targets are both (B,T) tensor of integers
-        # TODO:
         # 1. 用 self.token_embedding_table(idx) 得到 logits，形状 (B,T,C)
         # 2. 如果 targets 为 None，loss 设为 None
         # 3. 否则，把 logits reshape 成 (B*T, C)，targets reshape 成 (B*T,)，
         #    用 F.cross_entropy 计算 loss
         # 4. 返回 (logits, loss)
-        raise NotImplementedError
+        logits = self.token_embedding_table(idx)
+        if targets is None:
+            return logits, None
+        else:
+            B, T, C = logits.shape
+            # logits.shape是(B*T,C),targets的shape
+            logits = logits.view(B * T, C)
+            targets = targets.view(B * T)
+            loss = F.cross_entropy(logits, targets)
+            return logits, loss
 
     def generate(self, idx, max_new_tokens):
         # idx is (B, T) array of indices in the current context
-        # TODO: 循环 max_new_tokens 次，每次：
+        # 循环 max_new_tokens 次，每次：
         # 1. 调用 self(idx) 得到 logits（忽略 loss）
         # 2. 只取最后一个时间步的 logits，形状变成 (B, C)
         # 3. 用 F.softmax 得到概率分布
         # 4. 用 torch.multinomial 从概率分布中采样出下一个 token（形状 (B, 1)）
         # 5. 把采样出的 token 拼接到 idx 后面（沿时间维度），继续下一轮
         # 6. 循环结束后返回 idx
-        raise NotImplementedError
+        for _ in range(max_new_tokens):
+            logits, _ = self(idx)
+            logits = logits[:, -1, :]
+            prob = F.softmax(logits, dim=-1)
+            next = torch.multinomial(prob, num_samples=1)
+            idx = torch.cat((idx, next), dim=1)
+        return idx
 
 
 # ------------------------------ 训练 ------------------------------

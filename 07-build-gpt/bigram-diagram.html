@@ -407,6 +407,35 @@
     font-weight: 400;
   }
 
+  /* ---------- formula panel (cross entropy detail) ---------- */
+  .formula-panel {
+    margin-top: 22px;
+    padding-top: 22px;
+    border-top: 1px dashed var(--line);
+  }
+  .formula-head { margin-bottom: 14px; }
+  .formula-row {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 8px 16px;
+    margin-bottom: 10px;
+  }
+  .formula-name {
+    font-size: 0.8rem;
+    color: var(--muted);
+    flex: 0 0 auto;
+    min-width: 190px;
+  }
+  .formula-eq {
+    font-size: 0.98rem;
+    background: var(--code-bg);
+    color: var(--code-ink);
+    padding: 6px 12px;
+    border-radius: 6px;
+    letter-spacing: 0.01em;
+  }
+
   @media (max-width: 640px) {
     .pipeline { flex-direction: column; }
     .flow-arrow { transform: rotate(90deg); padding: 2px 0; flex-basis: 20px; }
@@ -629,6 +658,35 @@
         <div class="result-chip loss">F.cross_entropy → loss</div>
         <p class="desc" style="margin-top:2px">训练阶段——衡量预测分布与真实下一个字符的差距</p>
       </div>
+    </div>
+
+    <div class="formula-panel">
+      <div class="formula-head">
+        <span class="branch-label" style="color:var(--accent-op)">F.cross_entropy 内部在算什么</span>
+      </div>
+      <div class="formula-row">
+        <span class="formula-name">Step 1 · softmax 归一化</span>
+        <div class="formula-eq mono">p<sub>i,j</sub> = e<sup>logits[i,j]</sup> / Σ<sub>k</sub> e<sup>logits[i,k]</sup></div>
+      </div>
+      <div class="formula-row">
+        <span class="formula-name">Step 2 · 取真实标签对应概率，取负对数</span>
+        <div class="formula-eq mono">L<sub>i</sub> = −log p<sub>i, y(i)</sub></div>
+      </div>
+      <div class="formula-row">
+        <span class="formula-name">Step 3 · 对 B·T 个位置取平均</span>
+        <div class="formula-eq mono">loss = (1 / B·T) · Σ<sub>i</sub> L<sub>i</sub></div>
+      </div>
+      <p class="caption">
+        对照第 01 节的例子：输入 <span class="hl-cur">'h'</span> 时，logits 里 <span class="hl-next">'e'</span> 那一维最大。
+        如果真实的下一个字符恰好是 <span class="hl-next">'e'</span>，softmax 后它的概率会接近 1，<code class="inline">−log(≈1)</code> ≈ 0，loss 很小；
+        反之若模型预测错了，正确标签对应的概率很低，<code class="inline">−log(≈0)</code> 会变得很大——这就是"惩罚"预测错误的方式。
+      </p>
+      <p class="caption" style="margin-top:8px">
+        <span class="hl-op">实现细节：</span>PyTorch 的 <code class="inline">F.cross_entropy</code> 不会真的先算 softmax 再取 log，
+        而是用 <code class="inline">log_softmax</code> + <code class="inline">nll_loss</code> 一步完成（内部走 log-sum-exp 技巧），
+        避免 <code class="inline">e^logits</code> 数值上溢或下溢。输入必须是<span class="hl-cur">未归一化的原始 logits</span>，
+        不能提前 softmax 过——这是最容易踩的坑。
+      </p>
     </div>
   </section>
 
