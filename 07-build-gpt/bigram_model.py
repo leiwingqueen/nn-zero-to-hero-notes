@@ -56,7 +56,7 @@ def get_batch(split):
     # 4. y 是 x 整体往右移一位的片段（即下一个字符），同样堆叠成 (batch_size, block_size)
     # 5. 把 x, y 搬到 device 上并返回
     raw_data = val_data
-    if split == "train":
+    if split == 'train':
         raw_data = train_data
     ix = torch.randint(0, len(raw_data) - block_size, (batch_size,))
     x = torch.empty((len(ix), block_size), dtype=raw_data.dtype)
@@ -74,13 +74,22 @@ def get_batch(split):
 
 @torch.no_grad()
 def estimate_loss(model):
-    # TODO: 对 train / val 各采样 eval_iters 个 batch，计算平均 loss
+    # 对 train / val 各采样 eval_iters 个 batch，计算平均 loss
     # 1. model.eval() 切换到评估模式
     # 2. 对 'train' 和 'val' 两个 split，分别循环 eval_iters 次：
     #    调用 get_batch(split) 拿到 X, Y，跑一次前向拿到 loss，记录下来
     # 3. 对每个 split 记录的 loss 求平均，存进一个 dict（key 是 'train'/'val'）
     # 4. model.train() 切回训练模式，返回这个 dict
-    raise NotImplementedError
+    out = {}
+    model.eval()
+    for split in ['train', 'val']:
+        losses = torch.zeros(eval_iters)
+        for i in range(eval_iters):
+            xb, yb = get_batch(split)
+            _, loss = m(xb, yb)
+            losses[i] = loss
+        out[split] = losses.mean()
+    return out
 
 
 # ------------------------------ 模型定义 ------------------------------
@@ -142,6 +151,15 @@ optimizer = torch.optim.AdamW(m.parameters(), lr=learning_rate)
 # 5. loss.backward() 反向传播
 # 6. optimizer.step() 更新参数
 
+for i in range(max_iters):
+    if i % eval_interval == 0 or i == max_iters - 1:
+        losses = estimate_loss(m)
+        print(f"step {iter}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}")
+    xb, yb = get_batch('train')
+    logits, loss = m(xb, yb)
+    optimizer.zero_grad(set_to_none=True)
+    loss.backward()
+    optimizer.step()
 # ------------------------------ 测试 / 生成 ------------------------------
 # 用一个空字符（id=0）作为起点，生成 500 个新字符，看看训练后的模型能"编"出什么
 idx = torch.zeros((1, 1), dtype=torch.long, device=device)
