@@ -18,7 +18,11 @@ block_size = 8  # 每个序列的长度（上下文窗口）T
 max_iters = 3000
 eval_interval = 300
 learning_rate = 1e-2
-device = 'cuda' if torch.cuda.is_available() else 'cpu'
+device = (
+    'cuda' if torch.cuda.is_available()
+    else 'mps' if torch.backends.mps.is_available()
+    else 'cpu'
+)
 eval_iters = 200
 
 torch.manual_seed(1337)
@@ -62,8 +66,10 @@ def get_batch(split):
     x = torch.empty((len(ix), block_size), dtype=raw_data.dtype)
     y = torch.empty((len(ix), block_size), dtype=raw_data.dtype)
     for i, v in enumerate(ix):
-        x[i] = raw_data[i:i + block_size]
-        y[i] = raw_data[i + 1:i + 1 + block_size]
+        x[i] = raw_data[v:v + block_size]
+        y[i] = raw_data[v + 1:v + 1 + block_size]
+    x = x.to(device)
+    y = y.to(device)
     return x, y
 
 
@@ -154,7 +160,7 @@ optimizer = torch.optim.AdamW(m.parameters(), lr=learning_rate)
 for i in range(max_iters):
     if i % eval_interval == 0 or i == max_iters - 1:
         losses = estimate_loss(m)
-        print(f"step {iter}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}")
+        print(f"step {i}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}")
     xb, yb = get_batch('train')
     logits, loss = m(xb, yb)
     optimizer.zero_grad(set_to_none=True)
