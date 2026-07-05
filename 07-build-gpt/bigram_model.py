@@ -13,8 +13,8 @@ import torch.nn as nn
 from torch.nn import functional as F
 
 # ------------------------------ 超参数 ------------------------------
-batch_size = 32       # 每个 batch 并行处理的序列数量 B
-block_size = 8         # 每个序列的长度（上下文窗口）T
+batch_size = 32  # 每个 batch 并行处理的序列数量 B
+block_size = 8  # 每个序列的长度（上下文窗口）T
 max_iters = 3000
 eval_interval = 300
 learning_rate = 1e-2
@@ -49,14 +49,27 @@ val_data = data[n:]
 
 
 def get_batch(split):
-    # TODO: 随机采样一个 batch
+    # 随机采样一个 batch
     # 1. 根据 split 选择 train_data 或 val_data
     # 2. 用 torch.randint 随机选出 batch_size 个起始位置 ix（注意上界要减去 block_size，防止越界）
     # 3. x 是从每个起始位置取长度为 block_size 的片段，堆叠成 (batch_size, block_size)
     # 4. y 是 x 整体往右移一位的片段（即下一个字符），同样堆叠成 (batch_size, block_size)
     # 5. 把 x, y 搬到 device 上并返回
+    raw_data = val_data
+    if split == "train":
+        raw_data = train_data
+    ix = torch.randint(0, len(raw_data) - block_size, (batch_size,))
+    x = torch.empty((len(ix), block_size), dtype=raw_data.dtype)
+    y = torch.empty((len(ix), block_size), dtype=raw_data.dtype)
+    for i, v in enumerate(ix):
+        x[i] = raw_data[i:i + block_size]
+        y[i] = raw_data[i + 1:i + 1 + block_size]
+    return x, y
 
-    raise NotImplementedError
+
+#x, y = get_batch("train")
+#print("x:", x)
+#print("y:", y)
 
 
 @torch.no_grad()
